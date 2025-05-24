@@ -56,6 +56,9 @@
 ```bash
 python install.py
 ```
+```bash
+docker-compose up -d
+```
 
 ### Ручная установка
 

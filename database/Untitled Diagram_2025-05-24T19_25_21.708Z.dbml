@@ -1,0 +1,118 @@
+Table equipment {
+	equipment_id integer [ pk, increment, not null, unique ]
+	equipment_type_id integer
+	equipment_area_id integer
+	equipment_name varchar
+	equipment_nominal_power_kw decimal
+	equipment_installation_date date
+	equipment_status varchar
+}
+
+Table threshold {
+	threshold_id integer [ pk, increment, not null, unique ]
+	threshold_equipment_id integer
+	threshold_area_id integer
+	parameter_name varchar
+	warning_level decimal
+	critical_level decimal
+}
+
+Table areas {
+	area_id integer [ pk, increment, not null, unique ]
+	name varchar
+	description varchar
+}
+
+Table energy_readings {
+	energy_readings_id integer [ pk, increment, not null, unique ]
+	energy_readings_meter_id integer
+	energy_readings_timestamp timestamp
+	energy_readings_active_power_kw decimal
+	energy_readings_reactive_power_kvar decimal
+}
+
+Table logs {
+	log_id integer [ pk, increment, not null, unique ]
+	log_equipment_id integer
+	log_meter_id integer
+	log_timestamp timestamp
+	log_type varchar
+	log_parameter_name varchar
+	log_value decimal
+	log_threshold_value decimal
+	log_status varchar
+	log_aknowledged_by_user_id integer
+	log_aknowledged_at timestamp
+}
+
+Table users {
+	user_id integer [ pk, increment, not null, unique ]
+	user_username varchar
+	user_password varchar
+	user_full_name varchar
+	user_role varchar
+}
+
+Table equipment_states {
+	state_id integer [ pk, increment, not null, unique ]
+	state_equipment_id integer
+	state_name varchar
+	state_timestamp timestamp
+	state_operation_code_ varchar
+	state_tool_used varchar
+}
+
+Table equipment_types {
+	type_id integer [ pk, increment, not null, unique ]
+	type_name varchar
+	type_description text
+}
+
+Table meters {
+	meter_id integer [ pk, increment, not null, unique ]
+	meter_equipment_id integer
+	meter_model varchar
+	meter_serial_number varchar
+	meter_installation_date date
+	meter_check_date date
+}
+
+Ref fk_equipment_states_state_equipment_id_equipment {
+	equipment_states.state_equipment_id > equipment.equipment_id [ delete: no action, update: no action ]
+}
+
+Ref fk_threshold_threshold_equipment_id_equipment {
+	threshold.threshold_equipment_id > equipment.equipment_id [ delete: no action, update: no action ]
+}
+
+Ref fk_energy_readings_energy_readings_meter_id_meters {
+	energy_readings.energy_readings_meter_id > meters.meter_id [ delete: no action, update: no action ]
+}
+
+Ref fk_meters_meter_equipment_id_equipment {
+	meters.meter_equipment_id - equipment.equipment_id [ delete: no action, update: no action ]
+}
+
+Ref fk_logs_log_meter_id_meters {
+	logs.log_meter_id > meters.meter_id [ delete: no action, update: no action ]
+}
+
+Ref fk_logs_log_aknowledged_by_user_id_users {
+	logs.log_aknowledged_by_user_id > users.user_id [ delete: no action, update: no action ]
+}
+
+Ref fk_equipment_equipment_type_id_equipment_types {
+	equipment.equipment_type_id > equipment_types.type_id [ delete: no action, update: no action ]
+}
+
+Ref fk_equipment_equipment_area_id_areas {
+	equipment.equipment_area_id > areas.area_id [ delete: no action, update: no action ]
+}
+
+Ref fk_threshold_threshold_area_id_areas {
+	threshold.threshold_area_id > areas.area_id [ delete: no action, update: no action ]
+}
+
+Ref fk_logs_log_equipment_id_equipment {
+	logs.log_equipment_id > equipment.equipment_id [ delete: no action, update: no action ]
+}

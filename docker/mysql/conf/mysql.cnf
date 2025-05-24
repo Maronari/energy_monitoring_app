@@ -1,0 +1,35 @@
+[mysqld]
+# Основные настройки
+default-storage-engine = InnoDB
+character-set-server = utf8mb4
+collation-server = utf8mb4_unicode_ci
+
+# Настройки производительности
+innodb_buffer_pool_size = 256M
+innodb_log_file_size = 64M
+innodb_flush_log_at_trx_commit = 2
+innodb_flush_method = O_DIRECT
+
+# Настройки для временных рядов
+max_connections = 200
+query_cache_type = 1
+query_cache_size = 32M
+
+# Настройки логирования
+general_log = 1
+general_log_file = /var/log/mysql/general.log
+slow_query_log = 1
+slow_query_log_file = /var/log/mysql/slow.log
+long_query_time = 2
+
+# Настройки безопасности
+sql_mode = STRICT_TRANS_TABLES,NO_ZERO_DATE,NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO
+
+# Настройки для работы с JSON
+innodb_default_row_format = DYNAMIC
+
+[mysql]
+default-character-set = utf8mb4
+
+[client]
+default-character-set = utf8mb4

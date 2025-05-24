@@ -1,0 +1,13 @@
+2025-05-24 20:56:59,948 - database.db_manager - ERROR - Ошибка инициализации БД: (2003, "Can't connect to MySQL server on 'localhost'")
+2025-05-24 21:39:20,101 - database.db_manager - ERROR - Ошибка инициализации БД: (1045, "Access denied for user 'root'@'172.18.0.1' (using password: YES)")
+2025-05-24 21:42:33,794 - database.db_manager - INFO - Таблица energy_data создана/проверена
+2025-05-24 21:42:33,804 - database.db_manager - INFO - Таблица equipment_status создана/проверена
+2025-05-24 21:42:33,838 - database.db_manager - INFO - Таблица alerts создана/проверена
+2025-05-24 21:42:33,850 - database.db_manager - INFO - Таблица users создана/проверена
+2025-05-24 21:42:33,851 - database.db_manager - INFO - База данных инициализирована
+2025-05-24 21:42:51,033 - __main__ - INFO - Запуск системы сбора данных
+2025-05-24 21:42:51,053 - pymodbus.logging - ERROR - Connection to (192.168.1.100, 502) failed: [WinError 10013] Сделана попытка доступа к сокету методом, запрещенным правами доступа
+2025-05-24 21:42:51,053 - data_collection.modbus_client - ERROR - Не удалось подключиться к Счетчик Меркурий 1
+2025-05-24 21:42:51,054 - pymodbus.logging - ERROR - Connection to (192.168.1.101, 502) failed: [WinError 10013] Сделана попытка доступа к сокету методом, запрещенным правами доступа
+2025-05-24 21:42:51,055 - data_collection.modbus_client - ERROR - Не удалось подключиться к ПЛК ОВЕН 1
+2025-05-24 21:42:52,620 - __main__ - INFO - Остановка системы сбора данных

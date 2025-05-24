@@ -53,28 +53,28 @@
 - Сетевое подключение к устройствам Modbus
 
 ### Автоматическая установка
-\`\`\`bash
+```bash
 python install.py
-\`\`\`
+```
 
 ### Ручная установка
 
 1. Установка зависимостей:
-\`\`\`bash
+```bash
 pip install -r requirements.txt
-\`\`\`
+```
 
 2. Настройка базы данных:
-\`\`\`sql
+```sql
 CREATE DATABASE energy_monitoring CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER 'energy_user'@'%' IDENTIFIED BY 'your_password';
 GRANT ALL PRIVILEGES ON energy_monitoring.* TO 'energy_user'@'%';
 FLUSH PRIVILEGES;
-\`\`\`
+```
 
-3. Настройка конфигурации в `config/settings.py`:
-\`\`\`python
+3. Настройка конфигурации в `config/settings.py`
 # Обновите параметры подключения к БД
+```python
 self.DATABASE = DatabaseConfig(
     host='localhost',
     port=3306,
@@ -82,8 +82,10 @@ self.DATABASE = DatabaseConfig(
     username='energy_user',
     password='your_password'
 )
+```
 
 # Настройте устройства Modbus
+```python
 self.MODBUS_DEVICES = [
     ModbusDevice(
         name="Ваш счетчик",
@@ -93,27 +95,27 @@ self.MODBUS_DEVICES = [
         device_type="meter"
     )
 ]
-\`\`\`
+```
 
 ## Запуск системы
 
 ### Разработка
-\`\`\`bash
+```bash
 python main.py
-\`\`\`
+```
 
 ### Продакшн (с systemd)
-\`\`\`bash
+```bash
 sudo cp energy-monitoring.service /etc/systemd/system/
 sudo systemctl enable energy-monitoring
 sudo systemctl start energy-monitoring
-\`\`\`
+```
 
 Веб-интерфейс будет доступен по адресу: http://localhost:8080
 
 ## Структура проекта
 
-\`\`\`
+```
 energy-monitoring-system/
 ├── main.py                 # Главный модуль
 ├── config/
@@ -133,7 +135,7 @@ energy-monitoring-system/
 ├── requirements.txt        # Зависимости
 ├── install.py             # Скрипт установки
 └── README.md              # Документация
-\`\`\`
+```
 
 ## Конфигурация устройств
 

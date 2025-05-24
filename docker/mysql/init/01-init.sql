@@ -1,218 +1,328 @@
 -- Инициализация базы данных для системы мониторинга энергопотребления
+-- Обновленная схема БД
 
--- Создание таблицы данных энергопотребления
-CREATE TABLE IF NOT EXISTS energy_data (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    device_name VARCHAR(100) NOT NULL,
-    timestamp DATETIME(3) NOT NULL,
-    active_power DECIMAL(10,3),
-    reactive_power DECIMAL(10,3),
-    apparent_power DECIMAL(10,3),
-    power_factor DECIMAL(5,3),
-    voltage_l1 DECIMAL(8,2),
-    voltage_l2 DECIMAL(8,2),
-    voltage_l3 DECIMAL(8,2),
-    current_l1 DECIMAL(8,3),
-    current_l2 DECIMAL(8,3),
-    current_l3 DECIMAL(8,3),
-    frequency DECIMAL(6,3),
-    energy_consumed DECIMAL(12,3),
-    data_quality ENUM('good', 'poor', 'bad') DEFAULT 'good',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_device_time (device_name, timestamp),
-    INDEX idx_timestamp (timestamp),
-    INDEX idx_device (device_name)
+-- Создание таблиц согласно новой схеме
+
+-- Таблица типов оборудования
+CREATE TABLE `equipment_types` (
+    `type_id` INTEGER NOT NULL AUTO_INCREMENT UNIQUE,
+    `type_name` VARCHAR(255) NOT NULL,
+    `type_description` TEXT,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY(`type_id`),
+    INDEX idx_type_name (type_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Создание таблицы состояния оборудования
-CREATE TABLE IF NOT EXISTS equipment_status (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    device_name VARCHAR(100) NOT NULL,
-    timestamp DATETIME(3) NOT NULL,
-    status JSON,
-    equipment_state ENUM('running', 'stopped', 'maintenance', 'error') DEFAULT 'stopped',
-    discrete_inputs JSON,
-    analog_inputs JSON,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_device_time (device_name, timestamp),
-    INDEX idx_timestamp (timestamp)
+-- Таблица участков/зон
+CREATE TABLE `areas` (
+    `area_id` INTEGER NOT NULL AUTO_INCREMENT UNIQUE,
+    `name` VARCHAR(255) NOT NULL,
+    `description` VARCHAR(255),
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY(`area_id`),
+    INDEX idx_area_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Создание таблицы уведомлений
-CREATE TABLE IF NOT EXISTS alerts (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    device_name VARCHAR(100) NOT NULL,
-    alert_type VARCHAR(50) NOT NULL,
-    severity ENUM('low', 'medium', 'high', 'critical') DEFAULT 'medium',
-    message TEXT,
-    parameter_name VARCHAR(50),
-    current_value DECIMAL(15,6),
-    threshold_value DECIMAL(15,6),
-    timestamp DATETIME(3) NOT NULL,
-    acknowledged BOOLEAN DEFAULT FALSE,
-    acknowledged_by VARCHAR(50),
-    acknowledged_at DATETIME(3),
-    resolved BOOLEAN DEFAULT FALSE,
-    resolved_at DATETIME(3),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_device_time (device_name, timestamp),
-    INDEX idx_severity (severity),
-    INDEX idx_acknowledged (acknowledged),
-    INDEX idx_resolved (resolved)
+-- Таблица оборудования
+CREATE TABLE `equipment` (
+    `equipment_id` INTEGER NOT NULL AUTO_INCREMENT UNIQUE,
+    `equipment_type_id` INTEGER,
+    `equipment_area_id` INTEGER,
+    `equipment_name` VARCHAR(255) NOT NULL,
+    `equipment_nominal_power_kw` DECIMAL(10,3),
+    `equipment_installation_date` DATE,
+    `equipment_status` VARCHAR(255) DEFAULT 'active',
+    `ip_address` VARCHAR(45),
+    `port` INTEGER DEFAULT 502,
+    `unit_id` INTEGER DEFAULT 1,
+    `protocol` ENUM('modbus_tcp', 'modbus_rtu', 'opc_ua') DEFAULT 'modbus_tcp',
+    `manufacturer` VARCHAR(100),
+    `model` VARCHAR(100),
+    `serial_number` VARCHAR(100),
+    `last_communication` TIMESTAMP NULL,
+    `communication_status` ENUM('online', 'offline', 'error') DEFAULT 'offline',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY(`equipment_id`),
+    INDEX idx_equipment_name (equipment_name),
+    INDEX idx_equipment_status (equipment_status),
+    INDEX idx_communication_status (communication_status),
+    FOREIGN KEY(`equipment_type_id`) REFERENCES `equipment_types`(`type_id`) ON UPDATE CASCADE ON DELETE SET NULL,
+    FOREIGN KEY(`equipment_area_id`) REFERENCES `areas`(`area_id`) ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Создание таблицы пользователей
-CREATE TABLE IF NOT EXISTS users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    username VARCHAR(50) UNIQUE NOT NULL,
-    email VARCHAR(100),
-    password_hash VARCHAR(255) NOT NULL,
-    salt VARCHAR(32) NOT NULL,
-    role ENUM('admin', 'operator', 'viewer') NOT NULL DEFAULT 'viewer',
-    is_active BOOLEAN DEFAULT TRUE,
-    last_login DATETIME(3),
-    failed_login_attempts INT DEFAULT 0,
-    locked_until DATETIME(3),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_username (username),
-    INDEX idx_role (role),
+-- Таблица счетчиков
+CREATE TABLE `meters` (
+    `meter_id` INTEGER NOT NULL AUTO_INCREMENT UNIQUE,
+    `meter_equipment_id` INTEGER,
+    `meter_model` VARCHAR(255),
+    `meter_serial_number` VARCHAR(255),
+    `meter_installation_date` DATE,
+    `meter_check_date` DATE,
+    `meter_next_check_date` DATE,
+    `meter_accuracy_class` VARCHAR(10),
+    `meter_transformation_ratio_current` DECIMAL(8,2) DEFAULT 1.0,
+    `meter_transformation_ratio_voltage` DECIMAL(8,2) DEFAULT 1.0,
+    `is_active` BOOLEAN DEFAULT TRUE,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY(`meter_id`),
+    INDEX idx_meter_serial (meter_serial_number),
+    INDEX idx_meter_equipment (meter_equipment_id),
+    INDEX idx_meter_active (is_active),
+    FOREIGN KEY(`meter_equipment_id`) REFERENCES `equipment`(`equipment_id`) ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Таблица показаний энергопотребления
+CREATE TABLE `energy_readings` (
+    `energy_readings_id` BIGINT NOT NULL AUTO_INCREMENT UNIQUE,
+    `energy_readings_meter_id` INTEGER NOT NULL,
+    `energy_readings_timestamp` TIMESTAMP(3) NOT NULL,
+    `energy_readings_active_power_kw` DECIMAL(12,6),
+    `energy_readings_reactive_power_kvar` DECIMAL(12,6),
+    `energy_readings_apparent_power_kva` DECIMAL(12,6),
+    `energy_readings_power_factor` DECIMAL(5,3),
+    `energy_readings_voltage_l1` DECIMAL(8,2),
+    `energy_readings_voltage_l2` DECIMAL(8,2),
+    `energy_readings_voltage_l3` DECIMAL(8,2),
+    `energy_readings_current_l1` DECIMAL(8,3),
+    `energy_readings_current_l2` DECIMAL(8,3),
+    `energy_readings_current_l3` DECIMAL(8,3),
+    `energy_readings_frequency` DECIMAL(6,3),
+    `energy_readings_total_active_energy` DECIMAL(15,6),
+    `energy_readings_total_reactive_energy` DECIMAL(15,6),
+    `data_quality` ENUM('good', 'poor', 'bad') DEFAULT 'good',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(`energy_readings_id`),
+    INDEX idx_meter_timestamp (energy_readings_meter_id, energy_readings_timestamp),
+    INDEX idx_timestamp (energy_readings_timestamp),
+    INDEX idx_data_quality (data_quality),
+    FOREIGN KEY(`energy_readings_meter_id`) REFERENCES `meters`(`meter_id`) ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Таблица состояний оборудования
+CREATE TABLE `equipment_states` (
+    `state_id` BIGINT NOT NULL AUTO_INCREMENT UNIQUE,
+    `state_equipment_id` INTEGER NOT NULL,
+    `state_name` VARCHAR(255),
+    `state_timestamp` TIMESTAMP(3) NOT NULL,
+    `state_operation_code` VARCHAR(255),
+    `state_tool_used` VARCHAR(255),
+    `state_duration_minutes` INTEGER,
+    `state_power_consumption_kwh` DECIMAL(10,6),
+    `state_efficiency_percent` DECIMAL(5,2),
+    `additional_data` JSON,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(`state_id`),
+    INDEX idx_equipment_timestamp (state_equipment_id, state_timestamp),
+    INDEX idx_state_name (state_name),
+    INDEX idx_operation_code (state_operation_code),
+    FOREIGN KEY(`state_equipment_id`) REFERENCES `equipment`(`equipment_id`) ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Таблица пользователей
+CREATE TABLE `users` (
+    `user_id` INTEGER NOT NULL AUTO_INCREMENT UNIQUE,
+    `user_username` VARCHAR(255) UNIQUE NOT NULL,
+    `user_password` VARCHAR(255) NOT NULL,
+    `user_full_name` VARCHAR(255),
+    `user_email` VARCHAR(255),
+    `user_role` ENUM('admin', 'operator', 'viewer') NOT NULL DEFAULT 'viewer',
+    `user_salt` VARCHAR(32),
+    `is_active` BOOLEAN DEFAULT TRUE,
+    `last_login` TIMESTAMP NULL,
+    `failed_login_attempts` INTEGER DEFAULT 0,
+    `locked_until` TIMESTAMP NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY(`user_id`),
+    INDEX idx_username (user_username),
+    INDEX idx_role (user_role),
     INDEX idx_active (is_active)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Создание таблицы устройств
-CREATE TABLE IF NOT EXISTS devices (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(100) UNIQUE NOT NULL,
-    device_type ENUM('meter', 'plc', 'sensor') NOT NULL,
-    ip_address VARCHAR(45) NOT NULL,
-    port INT NOT NULL DEFAULT 502,
-    unit_id INT NOT NULL DEFAULT 1,
-    protocol ENUM('modbus_tcp', 'modbus_rtu', 'opc_ua') DEFAULT 'modbus_tcp',
-    manufacturer VARCHAR(100),
-    model VARCHAR(100),
-    location VARCHAR(200),
-    description TEXT,
-    is_active BOOLEAN DEFAULT TRUE,
-    last_communication DATETIME(3),
-    communication_status ENUM('online', 'offline', 'error') DEFAULT 'offline',
-    configuration JSON,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_name (name),
-    INDEX idx_type (device_type),
-    INDEX idx_active (is_active),
-    INDEX idx_status (communication_status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Создание таблицы пороговых значений
-CREATE TABLE IF NOT EXISTS thresholds (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    device_name VARCHAR(100),
-    parameter_name VARCHAR(50) NOT NULL,
-    min_value DECIMAL(15,6),
-    max_value DECIMAL(15,6),
-    warning_min DECIMAL(15,6),
-    warning_max DECIMAL(15,6),
-    critical_min DECIMAL(15,6),
-    critical_max DECIMAL(15,6),
-    unit VARCHAR(20),
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_device_param (device_name, parameter_name),
+-- Таблица пороговых значений
+CREATE TABLE `threshold` (
+    `threshold_id` INTEGER NOT NULL AUTO_INCREMENT UNIQUE,
+    `threshold_equipment_id` INTEGER,
+    `threshold_area_id` INTEGER,
+    `parameter_name` VARCHAR(255) NOT NULL,
+    `warning_level` DECIMAL(15,6),
+    `critical_level` DECIMAL(15,6),
+    `min_warning_level` DECIMAL(15,6),
+    `min_critical_level` DECIMAL(15,6),
+    `unit` VARCHAR(20),
+    `is_active` BOOLEAN DEFAULT TRUE,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY(`threshold_id`),
+    INDEX idx_equipment_parameter (threshold_equipment_id, parameter_name),
+    INDEX idx_area_parameter (threshold_area_id, parameter_name),
     INDEX idx_parameter (parameter_name),
     INDEX idx_active (is_active),
-    UNIQUE KEY unique_device_parameter (device_name, parameter_name)
+    FOREIGN KEY(`threshold_equipment_id`) REFERENCES `equipment`(`equipment_id`) ON UPDATE CASCADE ON DELETE CASCADE,
+    FOREIGN KEY(`threshold_area_id`) REFERENCES `areas`(`area_id`) ON UPDATE CASCADE ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Создание таблицы системных настроек
-CREATE TABLE IF NOT EXISTS system_settings (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    setting_key VARCHAR(100) UNIQUE NOT NULL,
-    setting_value TEXT,
-    setting_type ENUM('string', 'integer', 'float', 'boolean', 'json') DEFAULT 'string',
-    description TEXT,
-    category VARCHAR(50),
-    is_editable BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+-- Таблица логов/уведомлений
+CREATE TABLE `logs` (
+    `log_id` BIGINT NOT NULL AUTO_INCREMENT UNIQUE,
+    `log_equipment_id` INTEGER,
+    `log_meter_id` INTEGER,
+    `log_timestamp` TIMESTAMP(3) NOT NULL,
+    `log_type` ENUM('info', 'warning', 'error', 'critical', 'threshold_exceeded', 'communication_error', 'state_change') NOT NULL,
+    `log_parameter_name` VARCHAR(255),
+    `log_value` DECIMAL(15,6),
+    `log_threshold_value` DECIMAL(15,6),
+    `log_status` ENUM('new', 'acknowledged', 'resolved', 'ignored') DEFAULT 'new',
+    `log_message` TEXT,
+    `log_acknowledged_by_user_id` INTEGER,
+    `log_acknowledged_at` TIMESTAMP NULL,
+    `log_resolved_at` TIMESTAMP NULL,
+    `severity` ENUM('low', 'medium', 'high', 'critical') DEFAULT 'medium',
+    `additional_data` JSON,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(`log_id`),
+    INDEX idx_equipment_timestamp (log_equipment_id, log_timestamp),
+    INDEX idx_meter_timestamp (log_meter_id, log_timestamp),
+    INDEX idx_type_status (log_type, log_status),
+    INDEX idx_severity (severity),
+    INDEX idx_timestamp (log_timestamp),
+    INDEX idx_acknowledged (log_acknowledged_by_user_id),
+    FOREIGN KEY(`log_equipment_id`) REFERENCES `equipment`(`equipment_id`) ON UPDATE CASCADE ON DELETE CASCADE,
+    FOREIGN KEY(`log_meter_id`) REFERENCES `meters`(`meter_id`) ON UPDATE CASCADE ON DELETE CASCADE,
+    FOREIGN KEY(`log_acknowledged_by_user_id`) REFERENCES `users`(`user_id`) ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Таблица системных настроек
+CREATE TABLE `system_settings` (
+    `setting_id` INTEGER NOT NULL AUTO_INCREMENT UNIQUE,
+    `setting_key` VARCHAR(100) UNIQUE NOT NULL,
+    `setting_value` TEXT,
+    `setting_type` ENUM('string', 'integer', 'float', 'boolean', 'json') DEFAULT 'string',
+    `description` TEXT,
+    `category` VARCHAR(50),
+    `is_editable` BOOLEAN DEFAULT TRUE,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY(`setting_id`),
     INDEX idx_key (setting_key),
     INDEX idx_category (category)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Создание таблицы логов системы
-CREATE TABLE IF NOT EXISTS system_logs (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    timestamp DATETIME(3) NOT NULL,
-    level ENUM('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL') NOT NULL,
-    logger_name VARCHAR(100),
-    message TEXT,
-    module VARCHAR(100),
-    function_name VARCHAR(100),
-    line_number INT,
-    user_id INT,
-    device_name VARCHAR(100),
-    additional_data JSON,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_timestamp (timestamp),
-    INDEX idx_level (level),
-    INDEX idx_logger (logger_name),
-    INDEX idx_user (user_id),
-    INDEX idx_device (device_name)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Создание таблицы отчетов
-CREATE TABLE IF NOT EXISTS reports (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(200) NOT NULL,
-    report_type ENUM('summary', 'detailed', 'efficiency', 'violations', 'custom') NOT NULL,
-    parameters JSON,
-    file_path VARCHAR(500),
-    file_format ENUM('pdf', 'excel', 'csv') NOT NULL,
-    generated_by INT,
-    generated_at DATETIME(3) NOT NULL,
-    file_size BIGINT,
-    status ENUM('generating', 'completed', 'failed') DEFAULT 'generating',
-    error_message TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+-- Таблица отчетов
+CREATE TABLE `reports` (
+    `report_id` INTEGER NOT NULL AUTO_INCREMENT UNIQUE,
+    `report_name` VARCHAR(200) NOT NULL,
+    `report_type` ENUM('summary', 'detailed', 'efficiency', 'violations', 'custom') NOT NULL,
+    `report_parameters` JSON,
+    `file_path` VARCHAR(500),
+    `file_format` ENUM('pdf', 'excel', 'csv') NOT NULL,
+    `generated_by_user_id` INTEGER,
+    `generated_at` TIMESTAMP NOT NULL,
+    `file_size` BIGINT,
+    `status` ENUM('generating', 'completed', 'failed') DEFAULT 'generating',
+    `error_message` TEXT,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(`report_id`),
     INDEX idx_type (report_type),
-    INDEX idx_generated_by (generated_by),
+    INDEX idx_generated_by (generated_by_user_id),
     INDEX idx_generated_at (generated_at),
     INDEX idx_status (status),
-    FOREIGN KEY (generated_by) REFERENCES users(id) ON DELETE SET NULL
+    FOREIGN KEY (generated_by_user_id) REFERENCES users(user_id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Вставка начальных данных
 
--- Создание администратора по умолчанию
+-- Типы оборудования
+INSERT INTO equipment_types (type_name, type_description) VALUES 
+('Токарный станок', 'Металлообрабатывающий токарный станок'),
+('Фрезерный станок', 'Металлообрабатывающий фрезерный станок'),
+('Сверлильный станок', 'Сверлильный станок'),
+('Шлифовальный станок', 'Шлифовальный станок'),
+('Прессовое оборудование', 'Гидравлические и механические прессы'),
+('Сварочное оборудование', 'Сварочные аппараты и установки'),
+('Компрессорное оборудование', 'Воздушные компрессоры'),
+('Вентиляционное оборудование', 'Системы вентиляции и кондиционирования'),
+('Освещение', 'Системы освещения цеха'),
+('Вспомогательное оборудование', 'Прочее вспомогательное оборудование');
+
+-- Участки цеха
+INSERT INTO areas (name, description) VALUES 
+('Участок А - Токарная группа', 'Участок токарной обработки деталей'),
+('Участок Б - Фрезерная группа', 'Участок фрезерной обработки'),
+('Участок В - Сборочный', 'Участок сборки изделий'),
+('Участок Г - Термообработка', 'Участок термической обработки'),
+('Участок Д - Контроль качества', 'Участок контроля качества продукции'),
+('Вспомогательные системы', 'Компрессоры, вентиляция, освещение');
+
+-- Оборудование
+INSERT INTO equipment (equipment_type_id, equipment_area_id, equipment_name, equipment_nominal_power_kw, 
+                      equipment_installation_date, equipment_status, ip_address, port, unit_id, manufacturer, model) VALUES 
+(1, 1, 'Токарный станок ТС-001', 15.5, '2020-03-15', 'active', '192.168.1.100', 502, 1, 'Инкотекс', 'Меркурий 234'),
+(2, 2, 'Фрезерный станок ФС-001', 22.0, '2019-11-20', 'active', '192.168.1.101', 502, 2, 'ОВЕН', 'ПЛК210-03-CS'),
+(1, 1, 'Токарный станок ТС-002', 18.0, '2021-05-10', 'active', '192.168.1.102', 502, 3, 'Инкотекс', 'Меркурий 234'),
+(3, 1, 'Сверлильный станок СС-001', 5.5, '2020-08-12', 'active', '192.168.1.103', 502, 4, 'ОВЕН', 'МВ110-224.16ДН'),
+(7, 6, 'Компрессор КМП-001', 45.0, '2018-12-01', 'active', '192.168.1.104', 502, 5, 'Atlas Copco', 'GA22'),
+(8, 6, 'Вентиляция ВНТ-001', 12.0, '2019-06-15', 'active', '192.168.1.105', 502, 6, 'Systemair', 'DVNI-560');
+
+-- Счетчики
+INSERT INTO meters (meter_equipment_id, meter_model, meter_serial_number, meter_installation_date, 
+                   meter_check_date, meter_next_check_date, meter_accuracy_class) VALUES 
+(1, 'Меркурий 234 ARTM2-00 DPBR.G', 'M234001', '2020-03-15', '2023-03-15', '2027-03-15', '0.5S'),
+(2, 'Меркурий 234 ARTM2-00 DPBR.G', 'M234002', '2019-11-20', '2023-11-20', '2027-11-20', '0.5S'),
+(3, 'Меркурий 234 ARTM2-00 DPBR.G', 'M234003', '2021-05-10', '2024-05-10', '2028-05-10', '0.5S'),
+(4, 'Меркурий 234 ARTM2-00 DPBR.G', 'M234004', '2020-08-12', '2023-08-12', '2027-08-12', '0.5S'),
+(5, 'Меркурий 234 ARTM2-00 DPBR.G', 'M234005', '2018-12-01', '2023-12-01', '2027-12-01', '0.5S'),
+(6, 'Меркурий 234 ARTM2-00 DPBR.G', 'M234006', '2019-06-15', '2023-06-15', '2027-06-15', '0.5S');
+
+-- Пользователи
 -- Пароль: admin123 (в реальной системе должен быть изменен)
-INSERT INTO users (username, email, password_hash, salt, role) VALUES 
-('admin', 'admin@company.com', SHA2(CONCAT('admin123', 'default_salt'), 256), 'default_salt', 'admin');
+INSERT INTO users (user_username, user_password, user_full_name, user_email, user_role, user_salt) VALUES 
+('admin', SHA2(CONCAT('admin123', 'default_salt'), 256), 'Администратор системы', 'admin@company.com', 'admin', 'default_salt'),
+('operator1', SHA2(CONCAT('operator123', 'default_salt'), 256), 'Оператор участка А', 'operator1@company.com', 'operator', 'default_salt'),
+('viewer1', SHA2(CONCAT('viewer123', 'default_salt'), 256), 'Наблюдатель', 'viewer1@company.com', 'viewer', 'default_salt');
 
--- Вставка устройств по умолчанию
-INSERT INTO devices (name, device_type, ip_address, port, unit_id, manufacturer, model, location, description) VALUES 
-('Счетчик Меркурий 1', 'meter', '192.168.1.100', 502, 1, 'Инкотекс', 'Меркурий 234 ARTM2-00 DPBR.G', 'Цех №1, Участок А', 'Основной счетчик электроэнергии участка А'),
-('ПЛК ОВЕН 1', 'plc', '192.168.1.101', 502, 2, 'ОВЕН', 'ПЛК210-03-CS', 'Цех №1, Участок А', 'Контроллер управления оборудованием участка А'),
-('Модуль дискретного ввода 1', 'sensor', '192.168.1.102', 502, 3, 'ОВЕН', 'МВ110-224.16ДН', 'Цех №1, Участок А', 'Модуль дискретного ввода для контроля состояния оборудования');
+-- Пороговые значения
+INSERT INTO threshold (threshold_equipment_id, parameter_name, warning_level, critical_level, unit) VALUES 
+-- Общие пороги для активной мощности
+(NULL, 'energy_readings_active_power_kw', 50.0, 60.0, 'кВт'),
+-- Пороги для конкретного оборудования
+(1, 'energy_readings_active_power_kw', 18.0, 20.0, 'кВт'),
+(2, 'energy_readings_active_power_kw', 25.0, 30.0, 'кВт'),
+(5, 'energy_readings_active_power_kw', 50.0, 55.0, 'кВт'),
+-- Пороги для напряжения
+(NULL, 'energy_readings_voltage_l1', 250.0, 260.0, 'В'),
+(NULL, 'energy_readings_voltage_l2', 250.0, 260.0, 'В'),
+(NULL, 'energy_readings_voltage_l3', 250.0, 260.0, 'В'),
+-- Минимальные пороги для напряжения
+(NULL, 'energy_readings_voltage_l1', NULL, NULL, 'В'),
+(NULL, 'energy_readings_voltage_l2', NULL, NULL, 'В'),
+(NULL, 'energy_readings_voltage_l3', NULL, NULL, 'В');
 
--- Вставка пороговых значений по умолчанию
-INSERT INTO thresholds (device_name, parameter_name, max_value, warning_max, critical_max, unit) VALUES 
-(NULL, 'active_power', 1000.0, 900.0, 1000.0, 'кВт'),
-(NULL, 'current_l1', 100.0, 90.0, 100.0, 'А'),
-(NULL, 'current_l2', 100.0, 90.0, 100.0, 'А'),
-(NULL, 'current_l3', 100.0, 90.0, 100.0, 'А'),
-(NULL, 'voltage_l1', 250.0, 240.0, 250.0, 'В'),
-(NULL, 'voltage_l2', 250.0, 240.0, 250.0, 'В'),
-(NULL, 'voltage_l3', 250.0, 240.0, 250.0, 'В');
+UPDATE threshold SET min_warning_level = 210.0, min_critical_level = 200.0 
+WHERE parameter_name LIKE 'energy_readings_voltage_%';
 
-INSERT INTO thresholds (device_name, parameter_name, min_value, warning_min, critical_min, unit) VALUES 
-(NULL, 'voltage_l1', 200.0, 210.0, 200.0, 'В'),
-(NULL, 'voltage_l2', 200.0, 210.0, 200.0, 'В'),
-(NULL, 'voltage_l3', 200.0, 210.0, 200.0, 'В'),
-(NULL, 'power_factor', 0.8, 0.85, 0.8, '');
+-- Пороги для тока
+INSERT INTO threshold (threshold_equipment_id, parameter_name, warning_level, critical_level, unit) VALUES 
+(NULL, 'energy_readings_current_l1', 90.0, 100.0, 'А'),
+(NULL, 'energy_readings_current_l2', 90.0, 100.0, 'А'),
+(NULL, 'energy_readings_current_l3', 90.0, 100.0, 'А'),
+-- Пороги для коэффициента мощности
+(NULL, 'energy_readings_power_factor', NULL, NULL, '');
 
--- Вставка системных настроек
+UPDATE threshold SET min_warning_level = 0.85, min_critical_level = 0.8 
+WHERE parameter_name = 'energy_readings_power_factor';
+
+-- Пороги по участкам
+INSERT INTO threshold (threshold_area_id, parameter_name, warning_level, critical_level, unit) VALUES 
+(1, 'total_power_consumption', 80.0, 100.0, 'кВт'),
+(2, 'total_power_consumption', 60.0, 80.0, 'кВт'),
+(6, 'total_power_consumption', 70.0, 90.0, 'кВт');
+
+-- Системные настройки
 INSERT INTO system_settings (setting_key, setting_value, setting_type, description, category) VALUES 
 ('collection_interval', '5', 'integer', 'Интервал сбора данных в секундах', 'data_collection'),
 ('connection_timeout', '10', 'integer', 'Таймаут подключения к устройствам в секундах', 'data_collection'),
@@ -223,50 +333,95 @@ INSERT INTO system_settings (setting_key, setting_value, setting_type, descripti
 ('smtp_server', '', 'string', 'SMTP сервер для отправки email', 'notifications'),
 ('smtp_port', '587', 'integer', 'Порт SMTP сервера', 'notifications'),
 ('system_name', 'Система мониторинга энергопотребления', 'string', 'Название системы', 'general'),
-('company_name', 'ООО "Производственная компания"', 'string', 'Название компании', 'general');
+('company_name', 'ООО "Металлообрабатывающий завод"', 'string', 'Название компании', 'general'),
+('auto_acknowledge_timeout', '24', 'integer', 'Автоматическое подтверждение уведомлений через часы', 'notifications'),
+('energy_cost_per_kwh', '4.5', 'float', 'Стоимость электроэнергии за кВт·ч', 'economics');
 
 -- Создание представлений для удобства работы с данными
 
--- Представление последних данных по устройствам
-CREATE VIEW latest_energy_data AS
+-- Представление последних показаний по оборудованию
+CREATE VIEW latest_energy_readings AS
 SELECT 
-    ed.*,
-    d.device_type,
-    d.location,
-    d.communication_status
-FROM energy_data ed
-INNER JOIN devices d ON ed.device_name = d.name
+    er.*,
+    e.equipment_name,
+    e.equipment_nominal_power_kw,
+    e.equipment_status,
+    e.communication_status,
+    a.name as area_name,
+    et.type_name as equipment_type,
+    m.meter_model,
+    m.meter_serial_number
+FROM energy_readings er
+INNER JOIN meters m ON er.energy_readings_meter_id = m.meter_id
+INNER JOIN equipment e ON m.meter_equipment_id = e.equipment_id
+INNER JOIN areas a ON e.equipment_area_id = a.area_id
+INNER JOIN equipment_types et ON e.equipment_type_id = et.type_id
 INNER JOIN (
-    SELECT device_name, MAX(timestamp) as max_timestamp
-    FROM energy_data
-    GROUP BY device_name
-) latest ON ed.device_name = latest.device_name AND ed.timestamp = latest.max_timestamp;
+    SELECT energy_readings_meter_id, MAX(energy_readings_timestamp) as max_timestamp
+    FROM energy_readings
+    GROUP BY energy_readings_meter_id
+) latest ON er.energy_readings_meter_id = latest.energy_readings_meter_id 
+    AND er.energy_readings_timestamp = latest.max_timestamp;
 
 -- Представление активных уведомлений
-CREATE VIEW active_alerts AS
+CREATE VIEW active_logs AS
 SELECT 
-    a.*,
-    d.device_type,
-    d.location
-FROM alerts a
-INNER JOIN devices d ON a.device_name = d.name
-WHERE a.acknowledged = FALSE AND a.resolved = FALSE
-ORDER BY a.severity DESC, a.timestamp DESC;
+    l.*,
+    e.equipment_name,
+    a.name as area_name,
+    et.type_name as equipment_type,
+    u.user_full_name as acknowledged_by_name
+FROM logs l
+LEFT JOIN equipment e ON l.log_equipment_id = e.equipment_id
+LEFT JOIN areas a ON e.equipment_area_id = a.area_id
+LEFT JOIN equipment_types et ON e.equipment_type_id = et.type_id
+LEFT JOIN users u ON l.log_acknowledged_by_user_id = u.user_id
+WHERE l.log_status IN ('new', 'acknowledged') AND l.log_resolved_at IS NULL
+ORDER BY l.severity DESC, l.log_timestamp DESC;
 
--- Представление статистики по устройствам за последние 24 часа
-CREATE VIEW device_stats_24h AS
+-- Представление статистики энергопотребления по участкам за последние 24 часа
+CREATE VIEW area_energy_stats_24h AS
 SELECT 
-    device_name,
-    COUNT(*) as data_points,
-    AVG(active_power) as avg_power,
-    MAX(active_power) as max_power,
-    MIN(active_power) as min_power,
-    AVG(power_factor) as avg_power_factor,
-    AVG((voltage_l1 + voltage_l2 + voltage_l3) / 3) as avg_voltage,
-    AVG((current_l1 + current_l2 + current_l3) / 3) as avg_current
-FROM energy_data
-WHERE timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
-GROUP BY device_name;
+    a.area_id,
+    a.name as area_name,
+    COUNT(er.energy_readings_id) as total_readings,
+    AVG(er.energy_readings_active_power_kw) as avg_power_kw,
+    MAX(er.energy_readings_active_power_kw) as max_power_kw,
+    MIN(er.energy_readings_active_power_kw) as min_power_kw,
+    SUM(er.energy_readings_active_power_kw * 
+        TIMESTAMPDIFF(SECOND, 
+            LAG(er.energy_readings_timestamp) OVER (PARTITION BY a.area_id ORDER BY er.energy_readings_timestamp), 
+            er.energy_readings_timestamp
+        ) / 3600) as total_energy_kwh,
+    AVG(er.energy_readings_power_factor) as avg_power_factor,
+    COUNT(DISTINCT e.equipment_id) as equipment_count
+FROM areas a
+LEFT JOIN equipment e ON a.area_id = e.equipment_area_id
+LEFT JOIN meters m ON e.equipment_id = m.meter_equipment_id
+LEFT JOIN energy_readings er ON m.meter_id = er.energy_readings_meter_id
+WHERE er.energy_readings_timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+GROUP BY a.area_id, a.name;
+
+-- Представление эффективности оборудования
+CREATE VIEW equipment_efficiency AS
+SELECT 
+    e.equipment_id,
+    e.equipment_name,
+    e.equipment_nominal_power_kw,
+    a.name as area_name,
+    et.type_name as equipment_type,
+    AVG(er.energy_readings_active_power_kw) as avg_actual_power_kw,
+    (AVG(er.energy_readings_active_power_kw) / e.equipment_nominal_power_kw * 100) as load_factor_percent,
+    AVG(er.energy_readings_power_factor) as avg_power_factor,
+    COUNT(er.energy_readings_id) as readings_count,
+    MAX(er.energy_readings_timestamp) as last_reading_time
+FROM equipment e
+LEFT JOIN areas a ON e.equipment_area_id = a.area_id
+LEFT JOIN equipment_types et ON e.equipment_type_id = et.type_id
+LEFT JOIN meters m ON e.equipment_id = m.meter_equipment_id
+LEFT JOIN energy_readings er ON m.meter_id = er.energy_readings_meter_id
+WHERE er.energy_readings_timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+GROUP BY e.equipment_id, e.equipment_name, e.equipment_nominal_power_kw, a.name, et.type_name;
 
 -- Создание хранимых процедур
 
@@ -283,109 +438,215 @@ BEGIN
     
     START TRANSACTION;
     
-    -- Удаление старых данных энергопотребления
-    DELETE FROM energy_data 
-    WHERE timestamp < DATE_SUB(NOW(), INTERVAL retention_days DAY);
+    -- Удаление старых показаний энергопотребления
+    DELETE FROM energy_readings 
+    WHERE energy_readings_timestamp < DATE_SUB(NOW(), INTERVAL retention_days DAY);
     
-    -- Удаление старых логов
-    DELETE FROM system_logs 
-    WHERE timestamp < DATE_SUB(NOW(), INTERVAL retention_days DAY);
+    -- Удаление старых состояний оборудования
+    DELETE FROM equipment_states 
+    WHERE state_timestamp < DATE_SUB(NOW(), INTERVAL retention_days DAY);
     
-    -- Удаление старых разрешенных уведомлений
-    DELETE FROM alerts 
-    WHERE resolved = TRUE AND resolved_at < DATE_SUB(NOW(), INTERVAL retention_days DAY);
+    -- Удаление старых разрешенных логов
+    DELETE FROM logs 
+    WHERE log_status = 'resolved' AND log_resolved_at < DATE_SUB(NOW(), INTERVAL retention_days DAY);
     
     COMMIT;
 END //
 
 -- Процедура получения статистики энергопотребления
-CREATE PROCEDURE GetEnergyStats(
-    IN device_name_param VARCHAR(100),
+CREATE PROCEDURE GetEnergyStatistics(
+    IN equipment_id_param INT,
+    IN area_id_param INT,
     IN start_date DATETIME,
     IN end_date DATETIME
 )
 BEGIN
     SELECT 
-        device_name,
-        COUNT(*) as total_measurements,
-        AVG(active_power) as avg_active_power,
-        MAX(active_power) as max_active_power,
-        MIN(active_power) as min_active_power,
-        SUM(active_power * TIMESTAMPDIFF(SECOND, LAG(timestamp) OVER (ORDER BY timestamp), timestamp) / 3600) as total_energy_kwh,
-        AVG(power_factor) as avg_power_factor,
-        MIN(power_factor) as min_power_factor,
-        COUNT(CASE WHEN data_quality = 'poor' THEN 1 END) as poor_quality_count,
-        COUNT(CASE WHEN data_quality = 'bad' THEN 1 END) as bad_quality_count
-    FROM energy_data
-    WHERE (device_name_param IS NULL OR device_name = device_name_param)
-        AND timestamp BETWEEN start_date AND end_date
-    GROUP BY device_name
-    ORDER BY device_name;
+        e.equipment_id,
+        e.equipment_name,
+        a.name as area_name,
+        et.type_name as equipment_type,
+        COUNT(er.energy_readings_id) as total_measurements,
+        AVG(er.energy_readings_active_power_kw) as avg_active_power,
+        MAX(er.energy_readings_active_power_kw) as max_active_power,
+        MIN(er.energy_readings_active_power_kw) as min_active_power,
+        SUM(er.energy_readings_active_power_kw * 
+            TIMESTAMPDIFF(SECOND, 
+                LAG(er.energy_readings_timestamp) OVER (PARTITION BY e.equipment_id ORDER BY er.energy_readings_timestamp), 
+                er.energy_readings_timestamp
+            ) / 3600) as total_energy_kwh,
+        AVG(er.energy_readings_power_factor) as avg_power_factor,
+        MIN(er.energy_readings_power_factor) as min_power_factor,
+        COUNT(CASE WHEN er.data_quality = 'poor' THEN 1 END) as poor_quality_count,
+        COUNT(CASE WHEN er.data_quality = 'bad' THEN 1 END) as bad_quality_count,
+        (AVG(er.energy_readings_active_power_kw) / e.equipment_nominal_power_kw * 100) as avg_load_factor_percent
+    FROM equipment e
+    LEFT JOIN areas a ON e.equipment_area_id = a.area_id
+    LEFT JOIN equipment_types et ON e.equipment_type_id = et.type_id
+    LEFT JOIN meters m ON e.equipment_id = m.meter_equipment_id
+    LEFT JOIN energy_readings er ON m.meter_id = er.energy_readings_meter_id
+    WHERE (equipment_id_param IS NULL OR e.equipment_id = equipment_id_param)
+        AND (area_id_param IS NULL OR e.equipment_area_id = area_id_param)
+        AND (er.energy_readings_timestamp IS NULL OR er.energy_readings_timestamp BETWEEN start_date AND end_date)
+    GROUP BY e.equipment_id, e.equipment_name, a.name, et.type_name, e.equipment_nominal_power_kw
+    ORDER BY e.equipment_name;
+END //
+
+-- Процедура создания уведомления
+CREATE PROCEDURE CreateLog(
+    IN equipment_id_param INT,
+    IN meter_id_param INT,
+    IN log_type_param VARCHAR(255),
+    IN parameter_name_param VARCHAR(255),
+    IN value_param DECIMAL(15,6),
+    IN threshold_value_param DECIMAL(15,6),
+    IN message_param TEXT,
+    IN severity_param VARCHAR(20)
+)
+BEGIN
+    INSERT INTO logs (
+        log_equipment_id, 
+        log_meter_id, 
+        log_timestamp, 
+        log_type, 
+        log_parameter_name, 
+        log_value, 
+        log_threshold_value, 
+        log_message, 
+        severity
+    ) VALUES (
+        equipment_id_param,
+        meter_id_param,
+        NOW(3),
+        log_type_param,
+        parameter_name_param,
+        value_param,
+        threshold_value_param,
+        message_param,
+        severity_param
+    );
 END //
 
 DELIMITER ;
 
 -- Создание триггеров
 
--- Триггер для обновления статуса связи устройства
+-- Триггер для обновления статуса связи оборудования
 DELIMITER //
-CREATE TRIGGER update_device_communication_status
-AFTER INSERT ON energy_data
+CREATE TRIGGER update_equipment_communication_status
+AFTER INSERT ON energy_readings
 FOR EACH ROW
 BEGIN
-    UPDATE devices 
+    UPDATE equipment e
+    INNER JOIN meters m ON e.equipment_id = m.meter_equipment_id
     SET 
-        last_communication = NEW.timestamp,
-        communication_status = 'online'
-    WHERE name = NEW.device_name;
+        e.last_communication = NEW.energy_readings_timestamp,
+        e.communication_status = 'online'
+    WHERE m.meter_id = NEW.energy_readings_meter_id;
 END //
 DELIMITER ;
 
 -- Триггер для автоматического создания уведомлений при превышении порогов
 DELIMITER //
-CREATE TRIGGER check_thresholds_after_insert
-AFTER INSERT ON energy_data
+CREATE TRIGGER check_thresholds_after_energy_reading
+AFTER INSERT ON energy_readings
 FOR EACH ROW
 BEGIN
+    DECLARE equipment_id_var INT;
+    DECLARE area_id_var INT;
+    
+    -- Получение ID оборудования и участка
+    SELECT e.equipment_id, e.equipment_area_id INTO equipment_id_var, area_id_var
+    FROM equipment e
+    INNER JOIN meters m ON e.equipment_id = m.meter_equipment_id
+    WHERE m.meter_id = NEW.energy_readings_meter_id;
+    
     -- Проверка активной мощности
-    IF NEW.active_power IS NOT NULL THEN
-        INSERT INTO alerts (device_name, alert_type, severity, message, parameter_name, current_value, threshold_value, timestamp)
+    IF NEW.energy_readings_active_power_kw IS NOT NULL THEN
+        -- Проверка порогов для конкретного оборудования
+        INSERT INTO logs (log_equipment_id, log_meter_id, log_timestamp, log_type, log_parameter_name, 
+                         log_value, log_threshold_value, log_message, severity)
         SELECT 
-            NEW.device_name,
+            equipment_id_var,
+            NEW.energy_readings_meter_id,
+            NEW.energy_readings_timestamp,
             'threshold_exceeded',
+            'energy_readings_active_power_kw',
+            NEW.energy_readings_active_power_kw,
             CASE 
-                WHEN NEW.active_power > t.critical_max THEN 'critical'
-                WHEN NEW.active_power > t.warning_max THEN 'high'
-                ELSE 'medium'
+                WHEN NEW.energy_readings_active_power_kw > t.critical_level THEN t.critical_level
+                ELSE t.warning_level
             END,
-            CONCAT('Превышение мощности: ', NEW.active_power, ' кВт (порог: ', COALESCE(t.critical_max, t.warning_max, t.max_value), ' кВт)'),
-            'active_power',
-            NEW.active_power,
-            COALESCE(t.critical_max, t.warning_max, t.max_value),
-            NEW.timestamp
-        FROM thresholds t
-        WHERE (t.device_name = NEW.device_name OR t.device_name IS NULL)
-            AND t.parameter_name = 'active_power'
+            CONCAT('Превышение мощности: ', NEW.energy_readings_active_power_kw, ' кВт (порог: ', 
+                   CASE 
+                       WHEN NEW.energy_readings_active_power_kw > t.critical_level THEN t.critical_level
+                       ELSE t.warning_level
+                   END, ' кВт)'),
+            CASE 
+                WHEN NEW.energy_readings_active_power_kw > t.critical_level THEN 'critical'
+                ELSE 'high'
+            END
+        FROM threshold t
+        WHERE t.parameter_name = 'energy_readings_active_power_kw'
             AND t.is_active = TRUE
+            AND (t.threshold_equipment_id = equipment_id_var OR 
+                 (t.threshold_equipment_id IS NULL AND t.threshold_area_id IS NULL) OR
+                 t.threshold_area_id = area_id_var)
             AND (
-                (t.critical_max IS NOT NULL AND NEW.active_power > t.critical_max) OR
-                (t.warning_max IS NOT NULL AND NEW.active_power > t.warning_max) OR
-                (t.max_value IS NOT NULL AND NEW.active_power > t.max_value)
+                (t.critical_level IS NOT NULL AND NEW.energy_readings_active_power_kw > t.critical_level) OR
+                (t.warning_level IS NOT NULL AND NEW.energy_readings_active_power_kw > t.warning_level)
             )
-        ORDER BY t.device_name DESC
+        ORDER BY t.threshold_equipment_id DESC, t.threshold_area_id DESC
         LIMIT 1;
     END IF;
     
-    -- Аналогичные проверки можно добавить для других параметров
+    -- Проверка коэффициента мощности
+    IF NEW.energy_readings_power_factor IS NOT NULL THEN
+        INSERT INTO logs (log_equipment_id, log_meter_id, log_timestamp, log_type, log_parameter_name, 
+                         log_value, log_threshold_value, log_message, severity)
+        SELECT 
+            equipment_id_var,
+            NEW.energy_readings_meter_id,
+            NEW.energy_readings_timestamp,
+            'threshold_exceeded',
+            'energy_readings_power_factor',
+            NEW.energy_readings_power_factor,
+            CASE 
+                WHEN NEW.energy_readings_power_factor < t.min_critical_level THEN t.min_critical_level
+                ELSE t.min_warning_level
+            END,
+            CONCAT('Низкий коэффициент мощности: ', NEW.energy_readings_power_factor, 
+                   ' (минимум: ', 
+                   CASE 
+                       WHEN NEW.energy_readings_power_factor < t.min_critical_level THEN t.min_critical_level
+                       ELSE t.min_warning_level
+                   END, ')'),
+            CASE 
+                WHEN NEW.energy_readings_power_factor < t.min_critical_level THEN 'critical'
+                ELSE 'high'
+            END
+        FROM threshold t
+        WHERE t.parameter_name = 'energy_readings_power_factor'
+            AND t.is_active = TRUE
+            AND (t.threshold_equipment_id = equipment_id_var OR 
+                 (t.threshold_equipment_id IS NULL AND t.threshold_area_id IS NULL) OR
+                 t.threshold_area_id = area_id_var)
+            AND (
+                (t.min_critical_level IS NOT NULL AND NEW.energy_readings_power_factor < t.min_critical_level) OR
+                (t.min_warning_level IS NOT NULL AND NEW.energy_readings_power_factor < t.min_warning_level)
+            )
+        ORDER BY t.threshold_equipment_id DESC, t.threshold_area_id DESC
+        LIMIT 1;
+    END IF;
 END //
 DELIMITER ;
 
 -- Создание индексов для оптимизации производительности
-CREATE INDEX idx_energy_data_composite ON energy_data (device_name, timestamp, active_power);
-CREATE INDEX idx_alerts_composite ON alerts (device_name, severity, acknowledged, timestamp);
-CREATE INDEX idx_system_logs_composite ON system_logs (timestamp, level, logger_name);
+CREATE INDEX idx_energy_readings_composite ON energy_readings (energy_readings_meter_id, energy_readings_timestamp, energy_readings_active_power_kw);
+CREATE INDEX idx_logs_composite ON logs (log_equipment_id, log_type, log_status, log_timestamp);
+CREATE INDEX idx_equipment_states_composite ON equipment_states (state_equipment_id, state_timestamp, state_name);
 
--- Настройка автоматической очистки данных (событие)
+-- Настройка автоматической очистки данных
 SET GLOBAL event_scheduler = ON;
 
 DELIMITER //
@@ -404,5 +665,30 @@ BEGIN
     
     -- Вызов процедуры очистки
     CALL CleanupOldData(retention_days);
+END //
+DELIMITER ;
+
+-- Создание события для автоматического подтверждения старых уведомлений
+DELIMITER //
+CREATE EVENT IF NOT EXISTS auto_acknowledge_old_logs
+ON SCHEDULE EVERY 1 HOUR
+STARTS CURRENT_TIMESTAMP
+DO
+BEGIN
+    DECLARE timeout_hours INT DEFAULT 24;
+    
+    -- Получение настройки таймаута
+    SELECT CAST(setting_value AS UNSIGNED) INTO timeout_hours
+    FROM system_settings 
+    WHERE setting_key = 'auto_acknowledge_timeout' 
+    LIMIT 1;
+    
+    -- Автоматическое подтверждение старых уведомлений
+    UPDATE logs 
+    SET log_status = 'acknowledged',
+        log_acknowledged_at = NOW()
+    WHERE log_status = 'new' 
+        AND log_timestamp < DATE_SUB(NOW(), INTERVAL timeout_hours HOUR)
+        AND log_type IN ('warning', 'info');
 END //
 DELIMITER ;

@@ -1,159 +1,298 @@
 """
-Клиент для сбора данных по протоколу Modbus
+Обновленный клиент Modbus для новой схемы БД
 """
 import asyncio
 import logging
 from datetime import datetime
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from pymodbus.client import ModbusTcpClient
 from pymodbus.exceptions import ModbusException
-from config.settings import Settings
+from database.db_manager import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
 class ModbusDataCollector:
-    def __init__(self):
-        self.settings = Settings()
+    def __init__(self, db_manager: DatabaseManager):
+        self.db_manager = db_manager
         self.clients = {}
+        self.equipment_list = []
+        self.meters_cache = {}
     
-    async def connect_to_device(self, device):
-        """Подключение к устройству"""
+    async def initialize(self):
+        """Инициализация коллектора"""
+        await self.load_equipment_configuration()
+    
+    async def load_equipment_configuration(self):
+        """Загрузка конфигурации оборудования из БД"""
         try:
-            client = ModbusTcpClient(device.ip_address, port=device.port)
+            self.equipment_list = await self.db_manager.get_equipment_list()
+            
+            # Загрузка счетчиков для каждого оборудования
+            for equipment in self.equipment_list:
+                equipment_id = equipment['equipment_id']
+                meters = await self.db_manager.get_meters_by_equipment(equipment_id)
+                self.meters_cache[equipment_id] = meters
+            
+            logger.info(f"Загружено {len(self.equipment_list)} единиц оборудования")
+            
+        except Exception as e:
+            logger.error(f"Ошибка загрузки конфигурации оборудования: {e}")
+            raise
+    
+    async def connect_to_equipment(self, equipment: Dict[str, Any]) -> bool:
+        """Подключение к оборудованию"""
+        equipment_id = equipment['equipment_id']
+        equipment_name = equipment['equipment_name']
+        
+        try:
+            if not equipment['ip_address']:
+                logger.warning(f"Не указан IP-адрес для {equipment_name}")
+                return False
+            
+            client = ModbusTcpClient(equipment['ip_address'], port=equipment['port'])
             if client.connect():
-                self.clients[device.name] = client
-                logger.info(f"Подключение к {device.name} установлено")
+                self.clients[equipment_id] = client
+                logger.info(f"Подключение к {equipment_name} установлено")
                 return True
             else:
-                logger.error(f"Не удалось подключиться к {device.name}")
+                logger.error(f"Не удалось подключиться к {equipment_name}")
                 return False
         except Exception as e:
-            logger.error(f"Ошибка подключения к {device.name}: {e}")
+            logger.error(f"Ошибка подключения к {equipment_name}: {e}")
             return False
     
-    async def read_mercury_data(self, device, client):
+    async def read_mercury_meter_data(self, equipment: Dict[str, Any], client: ModbusTcpClient) -> List[Dict[str, Any]]:
         """Чтение данных со счетчика Меркурий"""
-        data = {
-            'device_name': device.name,
-            'timestamp': datetime.now(),
-            'device_type': 'meter'
-        }
+        equipment_id = equipment['equipment_id']
+        equipment_name = equipment['equipment_name']
+        readings = []
         
         try:
-            # Чтение активной мощности
-            result = client.read_holding_registers(
-                self.settings.MERCURY_REGISTERS['active_power'], 2, device.unit_id
-            )
-            if not result.isError():
-                # Преобразование в float (зависит от формата данных счетчика)
-                data['active_power'] = (result.registers[0] << 16 | result.registers[1]) / 1000.0
+            meters = self.meters_cache.get(equipment_id, [])
             
-            # Чтение реактивной мощности
-            result = client.read_holding_registers(
-                self.settings.MERCURY_REGISTERS['reactive_power'], 2, device.unit_id
-            )
-            if not result.isError():
-                data['reactive_power'] = (result.registers[0] << 16 | result.registers[1]) / 1000.0
+            for meter in meters:
+                meter_id = meter['meter_id']
+                unit_id = equipment['unit_id']
+                
+                reading_data = {
+                    'meter_id': meter_id,
+                    'equipment_id': equipment_id,
+                    'equipment_name': equipment_name,
+                    'timestamp': datetime.now(),
+                    'data_quality': 'good'
+                }
+                
+                try:
+                    # Чтение активной мощности (регистры 0x0000-0x0001)
+                    result = client.read_holding_registers(0x0000, 2, unit_id)
+                    if not result.isError():
+                        # Преобразование 32-битного значения (IEEE 754)
+                        raw_value = (result.registers[0] << 16) | result.registers[1]
+                        reading_data['active_power'] = self._convert_ieee754(raw_value) / 1000.0  # кВт
+                    
+                    # Чтение реактивной мощности (регистры 0x0002-0x0003)
+                    result = client.read_holding_registers(0x0002, 2, unit_id)
+                    if not result.isError():
+                        raw_value = (result.registers[0] << 16) | result.registers[1]
+                        reading_data['reactive_power'] = self._convert_ieee754(raw_value) / 1000.0  # кВАр
+                    
+                    # Расчет полной мощности
+                    if 'active_power' in reading_data and 'reactive_power' in reading_data:
+                        active = reading_data['active_power']
+                        reactive = reading_data['reactive_power']
+                        reading_data['apparent_power'] = (active**2 + reactive**2)**0.5
+                        
+                        # Расчет коэффициента мощности
+                        if reading_data['apparent_power'] > 0:
+                            reading_data['power_factor'] = active / reading_data['apparent_power']
+                    
+                    # Чтение напряжений по фазам
+                    for phase, reg_addr in [('l1', 0x0004), ('l2', 0x0006), ('l3', 0x0008)]:
+                        result = client.read_holding_registers(reg_addr, 2, unit_id)
+                        if not result.isError():
+                            raw_value = (result.registers[0] << 16) | result.registers[1]
+                            reading_data[f'voltage_{phase}'] = self._convert_ieee754(raw_value) / 100.0  # В
+                    
+                    # Чтение токов по фазам
+                    for phase, reg_addr in [('l1', 0x000A), ('l2', 0x000C), ('l3', 0x000E)]:
+                        result = client.read_holding_registers(reg_addr, 2, unit_id)
+                        if not result.isError():
+                            raw_value = (result.registers[0] << 16) | result.registers[1]
+                            reading_data[f'current_{phase}'] = self._convert_ieee754(raw_value) / 1000.0  # А
+                    
+                    # Чтение частоты (регистры 0x0010-0x0011)
+                    result = client.read_holding_registers(0x0010, 2, unit_id)
+                    if not result.isError():
+                        raw_value = (result.registers[0] << 16) | result.registers[1]
+                        reading_data['frequency'] = self._convert_ieee754(raw_value) / 100.0  # Гц
+                    
+                    # Применение коэффициентов трансформации
+                    if meter['meter_transformation_ratio_current'] != 1.0:
+                        for phase in ['l1', 'l2', 'l3']:
+                            if f'current_{phase}' in reading_data:
+                                reading_data[f'current_{phase}'] *= meter['meter_transformation_ratio_current']
+                    
+                    if meter['meter_transformation_ratio_voltage'] != 1.0:
+                        for phase in ['l1', 'l2', 'l3']:
+                            if f'voltage_{phase}' in reading_data:
+                                reading_data[f'voltage_{phase}'] *= meter['meter_transformation_ratio_voltage']
+                    
+                    readings.append(reading_data)
+                    
+                except Exception as e:
+                    logger.error(f"Ошибка чтения данных счетчика {meter_id} оборудования {equipment_name}: {e}")
+                    reading_data['data_quality'] = 'bad'
+                    readings.append(reading_data)
             
-            # Чтение напряжений
-            for phase, reg in [('l1', 'voltage_l1'), ('l2', 'voltage_l2'), ('l3', 'voltage_l3')]:
-                result = client.read_holding_registers(
-                    self.settings.MERCURY_REGISTERS[reg], 2, device.unit_id
-                )
-                if not result.isError():
-                    data[reg] = (result.registers[0] << 16 | result.registers[1]) / 100.0
-            
-            # Чтение токов
-            for phase, reg in [('l1', 'current_l1'), ('l2', 'current_l2'), ('l3', 'current_l3')]:
-                result = client.read_holding_registers(
-                    self.settings.MERCURY_REGISTERS[reg], 2, device.unit_id
-                )
-                if not result.isError():
-                    data[reg] = (result.registers[0] << 16 | result.registers[1]) / 1000.0
-            
-            return data
+            return readings
             
         except Exception as e:
-            logger.error(f"Ошибка чтения данных с {device.name}: {e}")
-            return None
+            logger.error(f"Ошибка чтения данных с оборудования {equipment_name}: {e}")
+            return []
     
-    async def read_plc_data(self, device, client):
-        """Чтение данных с ПЛК ОВЕН"""
-        data = {
-            'device_name': device.name,
-            'timestamp': datetime.now(),
-            'device_type': 'plc'
-        }
+    async def read_plc_data(self, equipment: Dict[str, Any], client: ModbusTcpClient) -> Dict[str, Any]:
+        """Чтение данных с ПЛК"""
+        equipment_id = equipment['equipment_id']
+        equipment_name = equipment['equipment_name']
         
         try:
-            # Чтение состояния оборудования
-            result = client.read_holding_registers(
-                self.settings.OVEN_REGISTERS['equipment_status'], 10, device.unit_id
-            )
-            if not result.isError():
-                data['equipment_status'] = result.registers
+            unit_id = equipment['unit_id']
             
-            # Чтение дискретных входов
-            result = client.read_discrete_inputs(
-                self.settings.OVEN_REGISTERS['discrete_inputs'], 16, device.unit_id
-            )
-            if not result.isError():
-                data['discrete_inputs'] = result.bits
+            state_data = {
+                'equipment_id': equipment_id,
+                'timestamp': datetime.now(),
+                'state_name': 'unknown',
+                'additional_data': {}
+            }
             
-            return data
+            # Чтение состояния оборудования (регистры 0x0100-0x0109)
+            result = client.read_holding_registers(0x0100, 10, unit_id)
+            if not result.isError():
+                state_data['additional_data']['equipment_status'] = result.registers
+                
+                # Интерпретация состояния (зависит от конкретного ПЛК)
+                status_word = result.registers[0]
+                if status_word & 0x0001:  # Бит 0 - работа
+                    state_data['state_name'] = 'running'
+                elif status_word & 0x0002:  # Бит 1 - остановка
+                    state_data['state_name'] = 'stopped'
+                elif status_word & 0x0004:  # Бит 2 - ошибка
+                    state_data['state_name'] = 'error'
+                else:
+                    state_data['state_name'] = 'idle'
+                
+                # Код операции (если доступен)
+                if len(result.registers) > 1:
+                    state_data['state_operation_code'] = str(result.registers[1])
+            
+            # Чтение дискретных входов (адреса 0x0200-0x020F)
+            result = client.read_discrete_inputs(0x0200, 16, unit_id)
+            if not result.isError():
+                state_data['additional_data']['discrete_inputs'] = result.bits[:16]
+            
+            return state_data
             
         except Exception as e:
-            logger.error(f"Ошибка чтения данных с ПЛК {device.name}: {e}")
+            logger.error(f"Ошибка чтения данных ПЛК {equipment_name}: {e}")
             return None
     
-    async def collect_device_data(self, device):
-        """Сбор данных с одного устройства"""
+    def _convert_ieee754(self, raw_value: int) -> float:
+        """Преобразование 32-битного значения в float IEEE 754"""
+        import struct
+        # Преобразование в байты и обратно в float
+        bytes_value = struct.pack('>I', raw_value)
+        return struct.unpack('>f', bytes_value)[0]
+    
+    async def collect_equipment_data(self, equipment: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Сбор данных с одного оборудования"""
+        equipment_id = equipment['equipment_id']
+        equipment_name = equipment['equipment_name']
+        
+        # Проверка активности оборудования
+        if equipment['equipment_status'] != 'active':
+            return []
+        
         # Подключение если не подключен
-        if device.name not in self.clients:
-            if not await self.connect_to_device(device):
-                return None
+        if equipment_id not in self.clients:
+            if not await self.connect_to_equipment(equipment):
+                return []
         
-        client = self.clients[device.name]
+        client = self.clients[equipment_id]
         
         # Проверка соединения
         if not client.is_socket_open():
-            if not await self.connect_to_device(device):
-                return None
-            client = self.clients[device.name]
+            if not await self.connect_to_equipment(equipment):
+                return []
+            client = self.clients[equipment_id]
         
-        # Чтение данных в зависимости от типа устройства
-        if device.device_type == 'meter':
-            return await self.read_mercury_data(device, client)
-        elif device.device_type == 'plc':
-            return await self.read_plc_data(device, client)
-        
-        return None
-    
-    async def collect_all_data(self):
-        """Сбор данных со всех устройств"""
         all_data = []
         
-        tasks = []
-        for device in self.settings.MODBUS_DEVICES:
-            tasks.append(self.collect_device_data(device))
-        
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        for result in results:
-            if isinstance(result, Exception):
-                logger.error(f"Ошибка сбора данных: {result}")
-            elif result is not None:
-                all_data.append(result)
+        try:
+            # Чтение данных энергопотребления (для всех типов оборудования со счетчиками)
+            energy_readings = await self.read_mercury_meter_data(equipment, client)
+            all_data.extend(energy_readings)
+            
+            # Чтение состояния оборудования (для ПЛК и управляемого оборудования)
+            if equipment['equipment_type'] in ['ПЛК', 'Токарный станок', 'Фрезерный станок']:
+                state_data = await self.read_plc_data(equipment, client)
+                if state_data:
+                    # Сохранение состояния оборудования
+                    await self.db_manager.save_equipment_state(equipment_id, state_data)
+            
+            # Обновление статуса связи
+            if all_data:
+                # Обновление будет выполнено триггером в БД
+                pass
+            
+        except Exception as e:
+            logger.error(f"Ошибка сбора данных с {equipment_name}: {e}")
+            
+            # Создание лога об ошибке связи
+            await self.db_manager.create_log({
+                'equipment_id': equipment_id,
+                'log_type': 'communication_error',
+                'message': f'Ошибка связи с оборудованием: {str(e)}',
+                'severity': 'high'
+            })
         
         return all_data
     
+    async def collect_all_data(self) -> List[Dict[str, Any]]:
+        """Сбор данных со всего оборудования"""
+        # Обновление конфигурации оборудования
+        await self.load_equipment_configuration()
+        
+        all_readings = []
+        
+        # Создание задач для параллельного сбора данных
+        tasks = []
+        for equipment in self.equipment_list:
+            if equipment['equipment_status'] == 'active':
+                tasks.append(self.collect_equipment_data(equipment))
+        
+        # Выполнение задач
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                equipment_name = self.equipment_list[i]['equipment_name']
+                logger.error(f"Ошибка сбора данных с {equipment_name}: {result}")
+            elif result:
+                all_readings.extend(result)
+        
+        return all_readings
+    
     def disconnect_all(self):
-        """Отключение от всех устройств"""
-        for name, client in self.clients.items():
+        """Отключение от всего оборудования"""
+        for equipment_id, client in self.clients.items():
             try:
                 client.close()
-                logger.info(f"Отключение от {name}")
+                equipment_name = next(
+                    (eq['equipment_name'] for eq in self.equipment_list if eq['equipment_id'] == equipment_id),
+                    f"ID:{equipment_id}"
+                )
+                logger.info(f"Отключение от {equipment_name}")
             except Exception as e:
-                logger.error(f"Ошибка отключения от {name}: {e}")
+                logger.error(f"Ошибка отключения от оборудования ID:{equipment_id}: {e}")
         
         self.clients.clear()

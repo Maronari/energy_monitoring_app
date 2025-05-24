@@ -30,9 +30,9 @@ class EnergyMonitoringSystem:
     def __init__(self):
         self.settings = Settings()
         self.db_manager = DatabaseManager()
-        self.data_collector = ModbusDataCollector()
-        self.data_processor = DataProcessor()
-        self.analyzer = EnergyAnalyzer()
+        self.data_collector = ModbusDataCollector(self.db_manager)
+        self.data_processor = DataProcessor(self.db_manager)
+        self.analyzer = EnergyAnalyzer(self.db_manager)
         self.dashboard = Dashboard()
         self.reports_manager = ReportsManager()
         self.admin_panel = AdminPanel()

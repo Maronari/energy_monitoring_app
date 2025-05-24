@@ -56,9 +56,6 @@
 ```bash
 python install.py
 ```
-```bash
-docker-compose up -d
-```
 
 ### Ручная установка
 
@@ -105,6 +102,10 @@ self.MODBUS_DEVICES = [
 ### Разработка
 ```bash
 python main.py
+```
+или контейнерами совместно с mysql и phpadmin:
+```bash
+docker-compose up -d
 ```
 
 ### Продакшн (с systemd)

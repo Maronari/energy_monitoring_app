@@ -33,7 +33,7 @@ class EnergyMonitoringSystem:
         self.data_collector = ModbusDataCollector(self.db_manager)
         self.data_processor = DataProcessor(self.db_manager)
         self.analyzer = EnergyAnalyzer(self.db_manager)
-        self.dashboard = Dashboard()
+        self.dashboard = Dashboard(self.db_manager)
         self.reports_manager = ReportsManager()
         self.admin_panel = AdminPanel()
         
@@ -86,7 +86,7 @@ async def main_page():
         with ui.row().classes('w-full items-center'):
             ui.label('Система мониторинга энергопотребления').classes('text-xl font-bold')
             ui.space()
-            ui.label(f'Время: {datetime.now().strftime("%H:%M:%S")}').classes('text-sm')
+            energy_system.dashboard.current_time_label = ui.label(f'Время: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}').classes('text-sm')
     
     with ui.left_drawer().classes('bg-gray-100'):
         with ui.column():
@@ -100,7 +100,7 @@ async def main_page():
                 stop_btn = ui.button('Стоп', on_click=stop_monitoring).classes('bg-red-500')
     
     # Основной контент - дашборд
-    await energy_system.dashboard.render()
+    await energy_system.dashboard.render(session_data={'role': 'viewer'})
 
 async def start_monitoring():
     """Запуск мониторинга"""
